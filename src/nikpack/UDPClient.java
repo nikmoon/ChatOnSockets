@@ -4,7 +4,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.*;
-import java.nio.Buffer;
 
 /**
  * Created by nikbird on 18.06.2017.
@@ -12,33 +11,60 @@ import java.nio.Buffer;
 public class UDPClient {
 
     public static void main(String[] args) {
-        InetAddress serverAddress;
-        DatagramPacket packet;
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        byte[] data;
+
         byte[] buffer = new byte[1024];
+        ListenSocket listenSocket;
+
+        // создаем слушающий сокет для приема сообщений
+        try {
+            listenSocket = new ListenSocket() {
+                @Override
+                public void onReceiveMessage(String message) {
+                    System.out.println(message);
+                }
+            };
+        } catch (SocketException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        // запускаем слушающий сокет
+        listenSocket.start();
+
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        DatagramPacket packet = new DatagramPacket(buffer, buffer.length, new InetSocketAddress("127.0.0.1", 5000));
 
         try (DatagramSocket socket = new DatagramSocket()) {
-            serverAddress = Inet4Address.getByName("127.0.0.1");
+
+            // сообщаем серверу порт слушающего сокета
+            String listenPortMessage = "LISTEN_PORT=" + String.valueOf(listenSocket.getListenPort());
+            packet.setData(listenPortMessage.getBytes());
+            socket.send(packet);
+
             for(;;) {
 
-                data = br.readLine().getBytes();
+                // считываем сообщение пользователя
+                String message = br.readLine();
+                if (message.equals("/exit"))
+                    break;
 
-                // отправляем строку на сервер
-                packet = new DatagramPacket(data, data.length, serverAddress, 5000);
+                // отправляем введенное пользователем значение на сервер
+                packet.setData(message.getBytes());
                 socket.send(packet);
-
-                // получаем ответ от сервера
-                packet = new DatagramPacket(buffer, 1024);
-                socket.receive(packet);
-                System.out.println(new String(packet.getData(), 0, packet.getLength()));
-                System.out.println("from port: " + packet.getPort());
             }
         } catch (SocketException e) {
             e.printStackTrace();
             System.out.println("Socket exception");
         } catch (IOException e) {
             e.printStackTrace();
+        }
+
+        listenSocket.stopListen();
+        try {
+            listenSocket.join(10000);
+        } catch (InterruptedException e) {
+            System.out.println("Listen thread not responding. Exit program.");
+            System.exit(-1);
         }
     }
 }
